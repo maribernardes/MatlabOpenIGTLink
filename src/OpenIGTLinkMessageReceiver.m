@@ -3,6 +3,7 @@ function receiver = OpenIGTLinkMessageReceiver(sock, onRxStringMsg, onRxTransfor
     global onRxStringMessage onRxTransformMessage onRxNDArrayMessage;
     onRxStringMessage = onRxStringMsg;
     onRxTransformMessage = onRxTransformMsg;
+    onRxImageMessage = onRxImageMsg;
     onRxNDArrayMessage = onRxNDArrayMsg;
 
     global socket;
@@ -15,7 +16,7 @@ function receiver = OpenIGTLinkMessageReceiver(sock, onRxStringMsg, onRxTransfor
 end
 
 function [name data] = readMessage()
-    global onRxStringMessage onRxTransformMessage onRxNDArrayMessage;
+    global onRxStringMessage onRxTransformMessage onRxImageMessage onRxNDArrayMessage;
 
     msg = ReadOpenIGTLinkMessage();
     
@@ -24,13 +25,15 @@ function [name data] = readMessage()
     messageType = char(msg.dataTypeName);
     messageType = deblank(messageType);
     
-    if strcmpi(messageType, 'STRING')==1
+    if strcmpi(messageType, 'STRING')
         [name data] = handleStringMessage(msg, onRxStringMessage );
-     elseif (strcmpi(messageType, 'TRANSFORM')==1)
+    elseif strcmpi(messageType, 'TRANSFORM')
         [name data]=handleTransformMessage(msg, onRxTransformMessage );
-     elseif strcmpi(messageType, 'NDARRAY') == 1
-         handleNDArrayMessage(msg, onRxNDArrayMessage );
-     end        
+    elseif strcmpi(messageType, 'IMAGE')
+        [name data]=handleImageMessage(msg, onRxImageMessage );
+    elseif strcmpi(messageType, 'NDARRAY')
+        [name data]=handleNDArrayMessage(msg, onRxNDArrayMessage );
+    end
 
 end
 
@@ -65,57 +68,66 @@ function [name trans] = handleTransformMessage(msg, onRxTransformMessage)
     %onRxTransformMessage(msg.deviceName , transform);
 end
 
-function handleImageMessage(msg, onRxStringMessage)
+function [name data] = handleImageMessage(msg, onRxStringMessage)
     body = msg.body;
     i=1;
     
-    V = uint8(body(i)); i = i + 1;
-    T = uint8(body(i)); i = i + 1;
-    S = uint8(body(i)); i = i + 1;
-    E = uint8(body(i)); i = i + 1;
-    O = uint8(body(i)); i = i + 1;
+    versionNumber = uint8(body(i)); i = i + 1;
+    numberOfComponents = uint8(body(i)); i = i + 1;
+    scalarType = uint8(body(i)); i = i + 1; % 2:int8 3:uint8 4:int16 5:uint16 6:int32 7:uint32 10:float32 11:float64)
+    endian = uint8(body(i)); i = i + 1; % 1:BIG 2:LITTLE
+    coordinate = uint8(body(i)); i = i + 1; % 1:RAS 2:LPS
     
-    RI =  convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
-    RJ =  convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
-    RK =  convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
+    volumeSizeI = convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
+    volumeSizeJ = convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
+    volumeSizeK = convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
     
-    TX =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    TY =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    TZ =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
+    data.ijkToXyz = eye(4);
     
-    SX =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    SY =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    SZ =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
+    data.ijkToXyz(1,1) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    data.ijkToXyz(2,1) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    data.ijkToXyz(3,1) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
     
-    NX =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    NY =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    NZ =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
+    data.ijkToXyz(1,2) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    data.ijkToXyz(2,2) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    data.ijkToXyz(3,2) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
     
-    PX =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    PY =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
-    PZ =  convertFromUint8VectorToUint16(body(i:i+3));i = i + 4;
+    data.ijkToXyz(1,3) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    data.ijkToXyz(2,3) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    data.ijkToXyz(3,3) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
     
-    DI = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    DJ = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    DK = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
+    positionX = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    positionY = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+    positionZ = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
+
+    // Save the transform that is embedded in the IMAGE message into the tracked frame
+    // igtl origin is in the image center
+    centerOriginToCornerOriginTransform=eye(4);
+    centerOriginToCornerOriginTransform(1:3,4) = [ -volumeSizeI/2; -volumeSizeJ/2; -volumeSizeK/2 ];
+    data.ijkToXyz = data.ijkToXyz * centerOriginToCornerOriginTransform;
+
+    subvolumeOriginI = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
+    subvolumeOriginJ = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
+    subvolumeOriginK = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
+
+    subVolumeSizeI = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
+    subVolumeSizeJ = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
+    subVolumeSizeK = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
     
-    DRI = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    DRJ = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    DRK = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    
-    IMAGE_DATA = body(i:length(body));
-    
-    strMsgEncoding=convertFromUint8VectorToUint16(msg.body(1:2));
-    if (strMsgEncoding~=3)
-        disp(['Warning: STRING message received with unknown encoding ',num2str(strMsgEncoding)])
+    data.pixelData = zeros(volumeSizeI, volumeSizeJ, volumeSizeK);
+    for kIndex=1:volumeSizeK
+      for jIndex=1:volumeSizeJ
+        for iIndex=1:volumeSizeI
+          data.pixelData(i,j,k) = convertFromUint8VectorToFloat64(body(i:i+8)); i = i + 8;
+        end
+      end
     end
-    strMsgLength=convertFromUint8VectorToUint16(msg.body(3:4));
-    msg.string=char(msg.body(5:4+strMsgLength));
-    onRxStringMessage(msg.deviceName, msg.string);
+    
+    %onRxStringMessage(msg.deviceName, msg.string);
 end
 
 function handleNDArrayMessage(msg, onRxNDArrayMessage)
-    %YET NOT implmented, will be available soon
+  print("handleNDArrayMessage is not yet implemented");
 end
 
 %%  Parse OpenIGTLink messag header
@@ -199,6 +211,15 @@ function result=convertFromUint8VectorToFloat32(uint8Vector)
         binVal = strcat(binVal, dec2bin(uint8Vector(i),8));
     end
     q = quantizer('float', [32 8]); % this is IEE 754
+    result = bin2num(q, binVal);
+end 
+
+function result=convertFromUint8VectorToFloat64(uint8Vector)
+    binVal = '';
+    for i=1:8
+        binVal = strcat(binVal, dec2bin(uint8Vector(i),16));
+    end
+    q = quantizer('double', [64 16]); % this is IEE 754
     result = bin2num(q, binVal);
 end 
 
