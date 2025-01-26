@@ -1,20 +1,32 @@
+clc;
+close all;
+
+% Start connection
 igtlConnection = igtlConnect('127.0.0.1',18944);
 sender = OpenIGTLinkMessageSender(igtlConnection);
 
-for t=1:1000
-  msg = ['<Command Name=''SetVar'' theta=''' , num2str(t,5) , '''/>' ];
-  sender.WriteOpenIGTLinkStringMessage('CMD_0001', msg);
-  msg1 = [ '<Command Name=''SetVar'' insertion_depth=''' , num2str(t/2,5) , '''/>'];
-  sender.WriteOpenIGTLinkStringMessage('CMD_0001', msg1);
-  
-  data = [1.23456, 2, 3];
-  sender.Write1DFloatArrayMessage('CMD_001', data);
-  
-  matrix = [ 1.34567 0 0 t; 0 1 0 0; 0 0 1 0; 0 0 0 1 ];
-  sender.igtlSendTransformMessage('TARGET_001', matrix);
-  pause(1)
+% Send a POINT message
+pointList = [0, 0, 0;
+            0.5, 0.5, 0.2;
+            1.2, 1.4, 3.2];
+sender.WriteOpenIGTLinkPointMessage('TEST_POINT2', pointList);
 
-end
+% % Send a STRING message
+% msg = 'Hello World!';
+% sender.WriteOpenIGTLinkStringMessage('String Matlab', msg);
 
+% % Send multiple TRANSFORM messages
+% theta = 0;
+% for t=1:15
+%     theta = theta + deg2rad(30)*t;
+%     matrix = [cos(theta), -sin(theta), 0, 0;
+%           sin(theta), cos(theta),  0, 0;
+%           0,          0,           1, 0;
+%           0,          0,           0, 1];
+%     sender.WriteOpenIGTLinkTransformMessage('Transform Matlab', matrix);
+%     pause(1)
+% end
+
+% Close connection
 igtlDisconnect(igtlConnection);
 

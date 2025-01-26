@@ -1,182 +1,182 @@
 % OpenIGTLink server that executes the received string commands
-function receiver = OpenIGTLinkMessageReceiver(sock, onRxStringMsg, onRxTransformMsg, onRxNDArrayMsg)
-    global onRxStringMessage onRxTransformMessage onRxNDArrayMessage;
+function receiver = OpenIGTLinkMessageReceiver(sock, onRxStringMsg, onRxTransformMsg, onRxPointMsg)
+    global onRxStringMessage onRxTransformMessage onRxPointMessage;
+    global socket;
+    global timeout;
     onRxStringMessage = onRxStringMsg;
     onRxTransformMessage = onRxTransformMsg;
-    onRxImageMessage = onRxImageMsg;
-    onRxNDArrayMessage = onRxNDArrayMsg;
-
-    global socket;
+    onRxPointMessage = onRxPointMsg;
     socket = sock;
-    
-    global timeout;
     timeout = 500;
-   
     receiver.readMessage = @readMessage;
 end
 
-function [name data] = readMessage()
-    global onRxStringMessage onRxTransformMessage onRxImageMessage onRxNDArrayMessage;
-
+% Process message content. Handle message content according with their types
+function [name, data] = readMessage()
+    global onRxStringMessage onRxTransformMessage onRxPointMessage;
     msg = ReadOpenIGTLinkMessage();
-    
-    %look at the message type and call appropriate function supplied as
-    %arguments
     messageType = char(msg.dataTypeName);
     messageType = deblank(messageType);
-    
     if strcmpi(messageType, 'STRING')
-        [name data] = handleStringMessage(msg, onRxStringMessage );
+        [name, data] = handleStringMessage(msg, onRxStringMessage);
     elseif strcmpi(messageType, 'TRANSFORM')
-        [name data]=handleTransformMessage(msg, onRxTransformMessage );
-    elseif strcmpi(messageType, 'IMAGE')
-        [name data]=handleImageMessage(msg, onRxImageMessage );
-    elseif strcmpi(messageType, 'NDARRAY')
-        [name data]=handleNDArrayMessage(msg, onRxNDArrayMessage );
+        [name, data] = handleTransformMessage(msg, onRxTransformMessage);
+    elseif strcmpi(messageType, 'POINT')
+        [name, data] = handlePointMessage(msg, onRxPointMessage);
     end
-
 end
 
-function [name message] = handleStringMessage(msg, onRxStringMessage)
-    if (length(msg.body)<5)
+%% Message content decoding (type specific)
+
+% STRING Message content
+function [name, message] = handleStringMessage(msg, onRxStringMessage)
+    if (length(msg.content)<5)
         disp('Error: STRING message received with incomplete contents')
         msg.string='';
         return
-    end        
-    strMsgEncoding=convertFromUint8VectorToUint16(msg.body(1:2));
+    end
+    strMsgEncoding = convertUint8Vector(msg.content(1:2), 'uint16');
     if (strMsgEncoding~=3)
         disp(['Warning: STRING message received with unknown encoding ',num2str(strMsgEncoding)])
     end
-    strMsgLength=convertFromUint8VectorToUint16(msg.body(3:4));
-    msg.string=char(msg.body(5:4+strMsgLength));
+    strMsgLength = convertUint8Vector(msg.content(3:4), 'uint16');
+    msg.string = char(msg.content(5:4+strMsgLength));
     name = msg.deviceName;
     message = msg.string;
-    %onRxStringMessage(msg.deviceName, msg.string);
+    onRxStringMessage(msg.deviceName, msg.string);
 end
 
-function [name trans] = handleTransformMessage(msg, onRxTransformMessage)
+% TRANSFORM Message content
+function [name, trans] = handleTransformMessage(msg, onRxTransformMessage)
     transform = diag([1 1 1 1]);
     k=1;
     for i=1:4
         for j=1:3
-            transform(j,i) = convertFromUint8VectorToFloat32(msg.body(4*(k-1) +1:4*k));
+            transform(j,i) = convertUint8Vector(msg.content(4*(k-1) +1:4*k), 'single');
             k = k+1;
         end
     end
     name = msg.deviceName;
     trans = transform;
-    %onRxTransformMessage(msg.deviceName , transform);
+    onRxTransformMessage(msg.deviceName , transform);
 end
 
-function [name data] = handleImageMessage(msg, onRxStringMessage)
-    body = msg.body;
-    i=1;
-    
-    versionNumber = uint8(body(i)); i = i + 1;
-    numberOfComponents = uint8(body(i)); i = i + 1;
-    scalarType = uint8(body(i)); i = i + 1; % 2:int8 3:uint8 4:int16 5:uint16 6:int32 7:uint32 10:float32 11:float64)
-    endian = uint8(body(i)); i = i + 1; % 1:BIG 2:LITTLE
-    coordinate = uint8(body(i)); i = i + 1; % 1:RAS 2:LPS
-    
-    volumeSizeI = convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
-    volumeSizeJ = convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
-    volumeSizeK = convertFromUint8VectorToUint16(body(i:i+1));i = i + 2;
-    
-    data.ijkToXyz = eye(4);
-    
-    data.ijkToXyz(1,1) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    data.ijkToXyz(2,1) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    data.ijkToXyz(3,1) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    
-    data.ijkToXyz(1,2) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    data.ijkToXyz(2,2) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    data.ijkToXyz(3,2) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    
-    data.ijkToXyz(1,3) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    data.ijkToXyz(2,3) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    data.ijkToXyz(3,3) = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    
-    positionX = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    positionY = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-    positionZ = convertFromUint8VectorToFloat32(body(i:i+3));i = i + 4;
-
-    // Save the transform that is embedded in the IMAGE message into the tracked frame
-    // igtl origin is in the image center
-    centerOriginToCornerOriginTransform=eye(4);
-    centerOriginToCornerOriginTransform(1:3,4) = [ -volumeSizeI/2; -volumeSizeJ/2; -volumeSizeK/2 ];
-    data.ijkToXyz = data.ijkToXyz * centerOriginToCornerOriginTransform;
-
-    subvolumeOriginI = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    subvolumeOriginJ = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    subvolumeOriginK = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-
-    subVolumeSizeI = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    subVolumeSizeJ = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    subVolumeSizeK = convertFromUint8VectorToUint16(body(i:i+1)); i = i + 2;
-    
-    data.pixelData = zeros(volumeSizeI, volumeSizeJ, volumeSizeK);
-    for kIndex=1:volumeSizeK
-      for jIndex=1:volumeSizeJ
-        for iIndex=1:volumeSizeI
-          data.pixelData(i,j,k) = convertFromUint8VectorToFloat64(body(i:i+8)); i = i + 8;
-        end
-      end
+% POINT Message
+function [name, pointList] = handlePointMessage(msg, onRxPointMessage)
+    pointDataSize = 136;
+    numPoints = floor((length(msg.content)-1)/pointDataSize);
+    % Preallocate structure array
+    points(numPoints) = struct('name', '', 'group', '', 'RGBA', [], 'XYZ', [], 'diameter', [], 'owner', ''); 
+    pointList = zeros(numPoints, 3);
+    for i = 1:numPoints
+        % Compute offset for this point
+        offset = (i-1) * pointDataSize; 
+        % Extract data using the computed offset
+        points(i).name = char(msg.content(offset + (1:64)));  % Name field (64 bytes)
+        points(i).group = char(msg.content(offset + (65:96))); % Group field (32 bytes)
+        points(i).RGBA = [msg.content(offset + 97), msg.content(offset + 98), ...
+                          msg.content(offset + 99), msg.content(offset + 100)]; % RGBA (4 bytes)
+        points(i).XYZ = [convertUint8Vector(msg.content(offset + (101:104)), 'single'), ...
+                         convertUint8Vector(msg.content(offset + (105:108)), 'single'), ...
+                         convertUint8Vector(msg.content(offset + (109:112)), 'single')]; % XYZ (3 × 4 bytes)
+        points(i).diameter = convertUint8Vector(msg.content(offset + (113:116)), 'single'); % Diameter (4 bytes)
+        points(i).owner = char(msg.content(offset + (117:137))); % Owner (21 bytes)
+        % Store XYZ in pointList
+        pointList(i,:) = points(i).XYZ;
     end
-    
-    %onRxStringMessage(msg.deviceName, msg.string);
+    name = msg.deviceName;
+    onRxPointMessage(msg.deviceName , pointList);
 end
 
-function handleNDArrayMessage(msg, onRxNDArrayMessage)
-  print("handleNDArrayMessage is not yet implemented");
+%% General message decoding
+% http://openigtlink.org/protocols/v2_header.html
+% https://openigtlink.org/protocols/v3_proposal.html
+
+% Parse OpenIGTLink message header
+function msg = ParseOpenIGTLinkMessageHeader(rawMsg)
+    msg.versionNumber = convertUint8Vector(rawMsg(1:2), 'uint16');
+    msg.dataTypeName = char(rawMsg(3:14));
+    msg.deviceName = char(rawMsg(15:34));
+    msg.timestamp = convertUint8Vector(rawMsg(35:42), 'uint64');
+    msg.bodySize = convertUint8Vector(rawMsg(43:50), 'uint64');
+    msg.bodyCrc = convertUint8Vector(rawMsg(51:58), 'uint64');
+    disp(['Device Name: ', msg.deviceName]);
+    disp(['Body Size: ', num2str(msg.bodySize)]);
 end
 
-%%  Parse OpenIGTLink messag header
-% http://openigtlink.org/protocols/v2_header.html    
-function parsedMsg=ParseOpenIGTLinkMessageHeader(rawMsg)
-    parsedMsg.versionNumber=convertFromUint8VectorToUint16(rawMsg(1:2));
-    parsedMsg.dataTypeName=char(rawMsg(3:14));
-    parsedMsg.deviceName=char(rawMsg(15:34));
-    parsedMsg.timestamp=convertFromUint8VectorToInt64(rawMsg(35:42));
-    parsedMsg.bodySize=convertFromUint8VectorToInt64(rawMsg(43:50));
-    parsedMsg.bodyCrc=convertFromUint8VectorToInt64(rawMsg(51:58));
+% Parse OpenIGTLink message body
+function msg = ParseOpenIGTLinkMessageBody(msg)
+    if (msg.versionNumber==1) % Body has only content (Protocol v1 and v2)
+        msg.content = msg.body;     % Copy data from body to content
+        msg = rmfield(msg, 'body'); % Remove the old field 'body'
+        msg.extHeaderSize = [];
+        msg.metadataHeaderSize = [];
+        msg.metadataSize = [];
+        msg.msgID = [];
+        msg.metadataNumberKeys = [];
+        msg.metadata = [];
+    elseif (msg.versionNumber==2) % Body has extended_header, content and metadata (Protocol v3)
+        % Extract extended_header
+        msg.extHeaderSize = convertUint8Vector(msg.body(1:2), 'uint16');
+        msg.metadataHeaderSize = convertUint8Vector(msg.body(3:4), 'uint16');
+        msg.metadataSize = convertUint8Vector(msg.body(5:8), 'uint32');
+        msg.msgID = convertUint8Vector(msg.body(9:12), 'uint32');
+        disp(['Ext Header Size: ', num2str(msg.extHeaderSize)]);
+        disp(['Metadata Header Size: ', num2str(msg.metadataHeaderSize)]);
+        disp(['Metadata Size: ', num2str(msg.metadataSize)]);
+        % Extract content
+        contentSize = msg.bodySize - (uint64(msg.extHeaderSize) + uint64(msg.metadataHeaderSize) + uint64(msg.metadataSize));
+        disp(['Content Size: ', num2str(contentSize)]);
+        msg.content = msg.body(13:13+contentSize);
+        % Extract metadata
+        msg.metadataNumberKeys = convertUint8Vector(msg.body(14+contentSize:15+contentSize), 'uint16');
+        msg.metadata = msg.body(16+contentSize:16+contentSize+uint64(msg.metadataSize));
+        msg = rmfield(msg, 'body'); % Remove the old field 'body'
+    end
 end
 
-function msg=ReadOpenIGTLinkMessage()
+% Receive message header and body and check for completeness
+function msg = ReadOpenIGTLinkMessage()
     global timeout;
-    openIGTLinkHeaderLength=58;
-    headerData=ReadWithTimeout(openIGTLinkHeaderLength, timeout);
+    openIGTLinkHeaderLength = 58;
+    % Get message header
+    headerData = ReadWithTimeout(openIGTLinkHeaderLength, timeout);
+    % Check is complete header was received
     if (length(headerData)==openIGTLinkHeaderLength)
-        msg=ParseOpenIGTLinkMessageHeader(headerData);
-        msg.body=ReadWithTimeout(msg.bodySize, timeout);            
+        % Get Message header
+        msg = ParseOpenIGTLinkMessageHeader(headerData);
+        % Get Message body
+        msg.body = ReadWithTimeout(msg.bodySize, timeout);  
+        % TODO: Check CRC64
+        % Separate msg.body into extended_header, content, meta_data
+        msg = ParseOpenIGTLinkMessageBody(msg);
     else
         error('ERROR: Timeout while waiting receiving OpenIGTLink message header')
     end
 end    
-      
-function data=ReadWithTimeout(requestedDataLength, timeoutSec)
+
+% Buffer expected number of bytes with timeout
+function data = ReadWithTimeout(requestedDataLength, timeoutSec)
     import java.net.Socket
     import java.io.*
     import java.net.ServerSocket
-    
     global socket;
-    
-    % preallocate to improve performance
-    data=zeros(1,requestedDataLength,'uint8');
-    signedDataByte=int8(0);
-    bytesRead=0;
-    while(bytesRead<requestedDataLength)    
+    data = zeros(1, requestedDataLength, 'uint8'); % preallocate to improve performance
+    signedDataByte = int8(0);
+    bytesRead = 0;
+    while (bytesRead < requestedDataLength)    
         % Computing (requestedDataLength-bytesRead) is an int64 operation, which may not be available on Matlab R2009 and before
-        int64arithmeticsSupported=~isempty(find(strcmp(methods('int64'),'minus')));
+        int64arithmeticsSupported =~ isempty(find(strcmp(methods('int64'),'minus'),1));
         if int64arithmeticsSupported
             % Full 64-bit arithmetics
-            bytesToRead=min(socket.inputStream.available, requestedDataLength-bytesRead);
+            bytesToRead = min(socket.inputStream.available, requestedDataLength-bytesRead);
         else
             % Fall back to floating point arithmetics
-            bytesToRead=min(socket.inputStream.available, double(requestedDataLength)-double(bytesRead));
+            bytesToRead = min(socket.inputStream.available, double(requestedDataLength)-double(bytesRead));
         end  
-        if (bytesRead==0 && bytesToRead>0)
+        if (bytesRead == 0 && bytesToRead > 0)
             % starting to read message header
-            tstart=tic;
+            tstart = tic;
         end
         for i = bytesRead+1:bytesRead+bytesToRead
             signedDataByte = DataInputStream(socket.inputStream).readByte;
@@ -186,61 +186,28 @@ function data=ReadWithTimeout(requestedDataLength, timeoutSec)
                 data(i) = bitcmp(-signedDataByte,'uint8')+1;
             end
         end            
-        bytesRead=bytesRead+bytesToRead;
+        bytesRead = bytesRead+bytesToRead;
         if (bytesRead>0 && bytesRead<requestedDataLength)
             % check if the reading of the header has timed out yet
             timeElapsedSec=toc(tstart);
             if(timeElapsedSec>timeoutSec)
                 % timeout, it should not happen
                 % remove the unnecessary preallocated elements
-                data=data(1:bytesRead);
+                data = data(1:bytesRead);
                 break
             end
         end
     end
 end
 
+%% Auxiliar functions
 
-function result=convertFromUint8VectorToUint16(uint8Vector)
-  result=int32(uint8Vector(1))*256+int32(uint8Vector(2));
-end
-
-function result=convertFromUint8VectorToFloat32(uint8Vector)
-    binVal = '';
-    for i=1:4
-        binVal = strcat(binVal, dec2bin(uint8Vector(i),8));
+% Conversion from array of bytes to given type
+function result = convertUint8Vector(uint8Vector, targetType)
+    % Ensure the input is a uint8 vector
+    if ~isa(uint8Vector, 'uint8')
+        error('Input must be of type uint8.');
     end
-    q = quantizer('float', [32 8]); % this is IEE 754
-    result = bin2num(q, binVal);
-end 
-
-function result=convertFromUint8VectorToFloat64(uint8Vector)
-    binVal = '';
-    for i=1:8
-        binVal = strcat(binVal, dec2bin(uint8Vector(i),16));
-    end
-    q = quantizer('double', [64 16]); % this is IEE 754
-    result = bin2num(q, binVal);
-end 
-
-function result=convertFromUint8VectorToInt64(uint8Vector)
-  multipliers = [256^7 256^6 256^5 256^4 256^3 256^2 256^1 1];
-  % Matlab R2009 and earlier versions don't support int64 arithmetics.
-  int64arithmeticsSupported=~isempty(find(strcmp(methods('int64'),'mtimes')));
-  if int64arithmeticsSupported
-    % Full 64-bit arithmetics
-    result = sum(int64(uint8Vector).*int64(multipliers));
-  else
-    % Fall back to floating point arithmetics: compute result with floating
-    % point type and convert the end result to int64
-    % (it should be precise enough for realistic file sizes)
-    result = int64(sum(double(uint8Vector).*multipliers));
-  end  
-end 
-
-function selectedByte=getNthByte(multibyte, n)
-  selectedByte=uint8(mod(floor(multibyte/256^n),256));
+    % Use typecast to convert uint8 to the specified target type
+    result = swapbytes(typecast(uint8Vector, targetType));
 end
-
-
-

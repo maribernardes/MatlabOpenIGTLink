@@ -1,26 +1,35 @@
+%% Receiver function example
 function testReceiveMessage()
-sock = igtlConnect('127.0.0.1',18944);
-receiver = OpenIGTLinkMessageReceiver(sock, @onRxStringMessage, @onRxTransformMessage, @onRxNDArrayMessage);
-
-    for i=1:10
+    clc;
+    close all;
+    % Set IP socket
+    sock = igtlConnect('127.0.0.1', 18944);
+    % Set receiver and loop for 3 messages
+    receiver = OpenIGTLinkMessageReceiver(sock, @onRxStringMessage, @onRxTransformMessage, @onRxPointMessage);
+    for i=1:3
         receiver.readMessage();
     end
-    
     igtlDisconnect(sock);
-
 end
 
-function onRxStringMessage(deviceName, message)
-  disp('received  STRING message');
-  disp(deviceName);
-  disp(message);
+%% Callback when STRING message is received and processed
+% Currently, only prints received value
+function onRxStringMessage(deviceName, text)
+  disp(['Received STRING message: ', deblank(deviceName),  ' = ', text]);
 end
 
+%% Callback when TRANSFORM message is received and processed
+% Currently, only prints received value
 function onRxTransformMessage(deviceName, transform)
-  disp('received  TRANSFORM message');
-  disp(deviceName);
-  disp( transform );
+  disp('Received TRANSFORM message: ');
+  disp([deblank(deviceName),  ' = ']);
+  disp(transform);
 end
 
-function onRxNDArrayMessage()
+%% Callback when POINT message is received and processed
+% Currently, only prints received value
+function onRxPointMessage(deviceName, array)
+  disp('Received POINT message: ');
+  disp([deblank(deviceName),  ' = ']);
+  disp(array);
 end
