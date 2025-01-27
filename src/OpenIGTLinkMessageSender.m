@@ -87,7 +87,7 @@ function result = WriteOpenIGTLinkPointMessage(deviceName, pointList, protocolVe
     pointList = single(pointList);
     for i = 1:numPoints
         name = uint8(padString([deviceName, '-', num2str(i)],64));
-        group = uint8(padString('Reserved', 32));
+        group = uint8(padString('Selected', 32));
         rgba = uint8([255 0 0 255]);
         X = convertToUint8Vector(pointList(i,1), 'single');
         Y = convertToUint8Vector(pointList(i,2), 'single');
@@ -97,17 +97,22 @@ function result = WriteOpenIGTLinkPointMessage(deviceName, pointList, protocolVe
         msg.content = [msg.content, name, group, rgba, X, Y, Z, diameter, owner];
     end
     % POINT medatada (might be optional)
-    numberKeys = convertToUint8Vector(1, 'uint16');
+    numberKeys = convertToUint8Vector(2, 'uint16');
     key1 = uint8('MRMLNodeName');
     value1 = uint8('MarkupsFiducial');
     keySize1 = convertToUint8Vector(length(key1), 'uint16');
     valueEncod1 = convertToUint8Vector(3, 'uint16');
     valueSize1 = convertToUint8Vector(length(value1), 'uint32');
-    metadataHeader = [numberKeys, keySize1, valueEncod1, valueSize1];
-    metadataValues = [key1, value1];
+    key2 = uint8('Status');
+    value2 = uint8('OK');
+    keySize2 = convertToUint8Vector(length(key2), 'uint16');
+    valueEncod2 = convertToUint8Vector(3, 'uint16');
+    valueSize2 = convertToUint8Vector(length(value2), 'uint32');
+    metadataHeader = [numberKeys, keySize1, valueEncod1, valueSize1, keySize2, valueEncod2, valueSize2];
+    metadataValues = [key1, value1, key2, value2];
     msg.metadataHeaderSizeInt = length(metadataHeader);
     msg.metadataSizeInt = length(metadataValues);
-    msg.metadata = [metadataHeader, metadataValues];    
+    msg.metadata = [metadataHeader, metadataValues];
     result = WriteOpenIGTLinkMessage(msg, protocolVersion);
 end
 
@@ -123,20 +128,21 @@ function result = WriteOpenIGTLinkMessage(msg, protocolVersion)
     end
     % Define message fields
     timestamp = convertToUint8Vector(igtlTimestampNow(), 'uint64');
-    if protocolVersion < 3     % Protocols v1 and v2 do not have ext_header and metadata
+    if protocolVersion < 3     
+        % Protocols v1 and v2 do not have ext_header and metadata
         versionNumber = convertToUint8Vector(1, 'uint16');
         % Define body
         bodySize = convertToUint8Vector(length(msg.content), 'uint64');
         body = msg.content;
         bodyCrc = calculateCrc64(body); 
     else
-        versionNumber = convertToUint8Vector(2, 'uint16');
         % Include metadata fields (since Protocol v3)
-        if ~exist('msg.metadata', 'var') || isempty(msg.metadata)
+        versionNumber = convertToUint8Vector(2, 'uint16');
+        % If no metadata included in msg by specific message function
+        if ~isfield(msg, 'metadata') || isempty(msg.metadata)
             msg.metadataHeaderSizeInt = 2;
             msg.metadataSizeInt = 0;
             msg.metadata = convertToUint8Vector(0, 'uint16'); % numberKeys=0
-        else
         end
         % Prepare extended_header fields (since Protocol v3)
         extHeaderSize = convertToUint8Vector(12, 'uint16');
