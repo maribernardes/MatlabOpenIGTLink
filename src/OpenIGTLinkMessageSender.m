@@ -88,7 +88,7 @@ function result = WriteOpenIGTLinkPointMessage(deviceName, pointList, protocolVe
     for i = 1:numPoints
         name = uint8(padString([deviceName, '-', num2str(i)],64));
         group = uint8(padString('Selected', 32));
-        rgba = uint8([255 0 0 255]);
+        rgba = uint8([255, 127,	127, 255]);
         X = convertToUint8Vector(pointList(i,1), 'single');
         Y = convertToUint8Vector(pointList(i,2), 'single');
         Z = convertToUint8Vector(pointList(i,3), 'single');
@@ -157,6 +157,7 @@ function result = WriteOpenIGTLinkMessage(msg, protocolVersion)
     end
 
     % Pack message
+   
     data = [versionNumber,  msg.dataTypeName,  msg.deviceName, timestamp, bodySize, bodyCrc, body];    
     result = 1;
     try
@@ -202,16 +203,18 @@ end
 
 % Get current timestamp for stamping message
 function timestamp = igtlTimestampNow()
-    timestamp = java.lang.System.currentTimeMillis/1000;
+    % timestamp = java.lang.System.currentTimeMillis/1000;
+    timestamp = uint64(0);
 end
 
 % Check sum CRC64 calculation
-function crc64_bytes = calculateCrc64(dataBuffer)
+function crc64_result = calculateCrc64(dataBuffer)
     % Ensure input is uint8
-    if ~isa(dataBuffer, 'uint8') & ~isa(dataBuffer, 'char')
+    if ~isa(dataBuffer, 'uint8')
         error('Input data buffer must be of type uint8 or char.');
     end
     % CRC64 lookup table (same as in OpenIGTLink C code)
+    persistent table;
     table = uint64([
         0x0000000000000000,0x42F0E1EBA9EA3693,0x85E1C3D753D46D26,0xC711223CFA3E5BB5, ...
         0x493366450E42ECDF,0x0BC387AEA7A8DA4C,0xCCD2A5925D9681F9,0x8E224479F47CB76A, ...
@@ -280,14 +283,12 @@ function crc64_bytes = calculateCrc64(dataBuffer)
     ]);
     % Set initial CRC value to 0 (as per OpenIGTLink spec)
     crc = uint64(0);
-    % Process each byte in the data buffer
+       % Process each byte in the data buffer
     for i = 1:length(dataBuffer)
-        % Extract the highest byte of CRC and XOR with input byte
-        index = bitxor(bitshift(crc, -56), uint64(dataBuffer(i)));
-        index = uint8(index) + 1;  % Ensure MATLAB 1-based indexing
-        % Compute next CRC value
-        crc = bitxor(table(index), bitshift(crc, 8));
+        % XOR top byte of CRC with the input byte
+        index = bitxor(bitshift(crc, -56), uint64(dataBuffer(i))) + 1; % MATLAB is 1-based indexing
+        crc = bitxor(table(index), bitshift(crc, 8)); % Apply table lookup
     end
     % Convert to uint8 array (Big-Endian Order)
-    crc64_bytes = typecast(swapbytes(crc), 'uint8'); 
+    crc64_result = typecast(swapbytes(crc), 'uint8');
 end

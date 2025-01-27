@@ -1,8 +1,9 @@
 % OpenIGTLink server that executes the received string commands
-function receiver = OpenIGTLinkMessageReceiver(sock, onRxStringMsg, onRxTransformMsg, onRxPointMsg)
-    global onRxStringMessage onRxTransformMessage onRxPointMessage;
+function receiver = OpenIGTLinkMessageReceiver(sock, onRxStatusMsg, onRxStringMsg, onRxTransformMsg, onRxPointMsg)
+    global onRxStatusMessage onRxStringMessage onRxTransformMessage onRxPointMessage;
     global socket;
     global timeout;
+    onRxStatusMessage = onRxStatusMsg;
     onRxStringMessage = onRxStringMsg;
     onRxTransformMessage = onRxTransformMsg;
     onRxPointMessage = onRxPointMsg;
@@ -13,20 +14,40 @@ end
 
 % Process message content. Handle message content according with their types
 function [name, data] = readMessage()
-    global onRxStringMessage onRxTransformMessage onRxPointMessage;
+    global onRxStatusMessage onRxStringMessage onRxTransformMessage onRxPointMessage;
     msg = ReadOpenIGTLinkMessage();
     messageType = char(msg.dataTypeName);
     messageType = deblank(messageType);
-    if strcmpi(messageType, 'STRING')
+    if strcmpi(messageType, 'STATUS')
+        [name, data] = handleStatusMessage(msg, onRxStatusMessage);
+    elseif strcmpi(messageType, 'STRING')
         [name, data] = handleStringMessage(msg, onRxStringMessage);
     elseif strcmpi(messageType, 'TRANSFORM')
         [name, data] = handleTransformMessage(msg, onRxTransformMessage);
     elseif strcmpi(messageType, 'POINT')
         [name, data] = handlePointMessage(msg, onRxPointMessage);
+    else
+        disp(['Currently unsupported message type:', messageType])
     end
 end
 
 %% Message content decoding (type specific)
+
+% STATUS Message content
+% 3DSlicer is currently sending empty status messages
+function [name, message] = handleStatusMessage(msg, onRxStatusMessage)
+    if (length(msg.content)<30)
+        disp('Error: STATUS message received with incomplete contents')
+        return
+    end
+    % code = convertUint8Vector(msg.content(1:2), 'uint16');
+    % subCode = convertUint8Vector(msg.content(3:10), 'int64');
+    % errorName = char(msg.content(11:30));
+    % message = char(msg.content(31:length(msg.content)));
+    message = [];
+    name = msg.deviceName;
+    onRxStatusMessage(msg.deviceName, message);
+end
 
 % STRING Message content
 function [name, message] = handleStringMessage(msg, onRxStringMessage)
@@ -40,14 +61,13 @@ function [name, message] = handleStringMessage(msg, onRxStringMessage)
         disp(['Warning: STRING message received with unknown encoding ',num2str(strMsgEncoding)])
     end
     strMsgLength = convertUint8Vector(msg.content(3:4), 'uint16');
-    msg.string = char(msg.content(5:4+strMsgLength));
+    message = char(msg.content(5:4+strMsgLength));
     name = msg.deviceName;
-    message = msg.string;
-    onRxStringMessage(msg.deviceName, msg.string);
+    onRxStringMessage(name, message);
 end
 
 % TRANSFORM Message content
-function [name, trans] = handleTransformMessage(msg, onRxTransformMessage)
+function [name, transform] = handleTransformMessage(msg, onRxTransformMessage)
     transform = diag([1 1 1 1]);
     k=1;
     for i=1:4
@@ -57,8 +77,7 @@ function [name, trans] = handleTransformMessage(msg, onRxTransformMessage)
         end
     end
     name = msg.deviceName;
-    trans = transform;
-    onRxTransformMessage(msg.deviceName , transform);
+    onRxTransformMessage(name , transform);
 end
 
 % POINT Message
@@ -85,7 +104,7 @@ function [name, pointList] = handlePointMessage(msg, onRxPointMessage)
         pointList(i,:) = points(i).XYZ;
     end
     name = msg.deviceName;
-    onRxPointMessage(msg.deviceName , pointList);
+    onRxPointMessage(name , pointList);
 end
 
 %% General message decoding
@@ -130,7 +149,7 @@ function msg = ParseOpenIGTLinkMessageBody(msg)
         msg.content = msg.body(13:12+contentSize);
         % Extract metadata
         msg.metadataNumberKeys = convertUint8Vector(msg.body(13+contentSize:14+contentSize), 'uint16');
-        msg.metadata = msg.body(15+contentSize:14+contentSize+uint64(msg.metadataSize));
+        msg.metadata = msg.body(15+contentSize:length(msg.body));
         msg = rmfield(msg, 'body'); % Remove the old field 'body'
     end
 end
