@@ -64,7 +64,7 @@ end
 % POINT Message
 function [name, pointList] = handlePointMessage(msg, onRxPointMessage)
     pointDataSize = 136;
-    numPoints = floor((length(msg.content)-1)/pointDataSize);
+    numPoints = floor((length(msg.content))/pointDataSize);
     % Preallocate structure array
     points(numPoints) = struct('name', '', 'group', '', 'RGBA', [], 'XYZ', [], 'diameter', [], 'owner', ''); 
     pointList = zeros(numPoints, 3);
@@ -80,7 +80,7 @@ function [name, pointList] = handlePointMessage(msg, onRxPointMessage)
                          convertUint8Vector(msg.content(offset + (105:108)), 'single'), ...
                          convertUint8Vector(msg.content(offset + (109:112)), 'single')]; % XYZ (3 × 4 bytes)
         points(i).diameter = convertUint8Vector(msg.content(offset + (113:116)), 'single'); % Diameter (4 bytes)
-        points(i).owner = char(msg.content(offset + (117:137))); % Owner (21 bytes)
+        points(i).owner = char(msg.content(offset + (117:136))); % Owner (20 bytes)
         % Store XYZ in pointList
         pointList(i,:) = points(i).XYZ;
     end
@@ -127,10 +127,10 @@ function msg = ParseOpenIGTLinkMessageBody(msg)
         % Extract content
         contentSize = msg.bodySize - (uint64(msg.extHeaderSize) + uint64(msg.metadataHeaderSize) + uint64(msg.metadataSize));
         disp(['Content Size: ', num2str(contentSize)]);
-        msg.content = msg.body(13:13+contentSize);
+        msg.content = msg.body(13:12+contentSize);
         % Extract metadata
-        msg.metadataNumberKeys = convertUint8Vector(msg.body(14+contentSize:15+contentSize), 'uint16');
-        msg.metadata = msg.body(16+contentSize:16+contentSize+uint64(msg.metadataSize));
+        msg.metadataNumberKeys = convertUint8Vector(msg.body(13+contentSize:14+contentSize), 'uint16');
+        msg.metadata = msg.body(15+contentSize:14+contentSize+uint64(msg.metadataSize));
         msg = rmfield(msg, 'body'); % Remove the old field 'body'
     end
 end
