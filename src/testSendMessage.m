@@ -26,4 +26,3 @@ sender.WriteOpenIGTLinkTransformMessage('TransformTest', matrix);
 
 % Close connection
 igtlDisconnect(igtlConnection);
-

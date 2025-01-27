@@ -100,12 +100,12 @@ function msg = ParseOpenIGTLinkMessageHeader(rawMsg)
     msg.timestamp = convertUint8Vector(rawMsg(35:42), 'uint64');
     msg.bodySize = convertUint8Vector(rawMsg(43:50), 'uint64');
     msg.bodyCrc = convertUint8Vector(rawMsg(51:58), 'uint64');
-    disp(['Device Name: ', msg.deviceName]);
-    disp(['Body Size: ', num2str(msg.bodySize)]);
 end
 
 % Parse OpenIGTLink message body
 function msg = ParseOpenIGTLinkMessageBody(msg)
+    disp(['Device Name: ', msg.deviceName]);
+    disp(['Body Size: ', num2str(msg.bodySize)]);
     if (msg.versionNumber==1) % Body has only content (Protocol v1 and v2)
         msg.content = msg.body;     % Copy data from body to content
         msg = rmfield(msg, 'body'); % Remove the old field 'body'
