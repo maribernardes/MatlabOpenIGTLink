@@ -161,7 +161,11 @@ function msg = ReadOpenIGTLinkMessage()
         msg = ParseOpenIGTLinkMessageHeader(headerData);
         % Get Message body
         msg.body = ReadWithTimeout(msg.bodySize, timeout);  
-        % TODO: Check CRC64
+        % Check CRC64 check sum
+        calculatedCrc = convertUint8Vector(igtlComputeCrc(msg.body), 'uint64');
+        if (calculatedCrc ~= msg.bodyCrc)
+            error('ERROR: Failed check sum')
+        end
         % Separate msg.body into extended_header, content, meta_data
         msg = ParseOpenIGTLinkMessageBody(msg);
     else

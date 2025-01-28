@@ -21,7 +21,7 @@ end
 %% Callback when STRING message is received and processed
 % Currently, only prints received value
 function onRxStringMessage(deviceName, text)
-    disp(['Received STRING message: ', deblank(deviceName), text]);
+    disp(['Received STRING message: ', deblank(deviceName), ' = ', text]);
 end
 
 %% Callback when TRANSFORM message is received and processed
