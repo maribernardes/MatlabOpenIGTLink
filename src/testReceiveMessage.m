@@ -1,13 +1,12 @@
 %% Receiver function example
 function testReceiveMessage()
-    global i;
     clc; close all;
 
-    % Set IP socket and number of messages to receive
-    N = 1;
+    % Set IP socket and number of messages (N) to receive
+    N = 3;
     sock = igtlConnect('127.0.0.1', 18944);
     receiver = OpenIGTLinkMessageReceiver(sock, @onRxStatusMessage, @onRxStringMessage, @onRxTransformMessage, @onRxPointMessage);
-    for i=1:N
+    for i=1:N+1 % not counting first STATUS message (N+1)
         receiver.readMessage();
     end
     igtlDisconnect(sock);
@@ -16,15 +15,13 @@ end
 %% Callback when STATUS message is received and processed
 % Currently, only prints received value
 function onRxStatusMessage(deviceName, text)
-    global i
-    disp(['Received STATUS message: ', deblank(deviceName),  ' = ', text]);
-    i = i+1; % Not counting this message
+    disp(['Received STATUS message ', deblank(deviceName),  text]);
 end
 
 %% Callback when STRING message is received and processed
 % Currently, only prints received value
 function onRxStringMessage(deviceName, text)
-    disp(['Received STRING message: ', deblank(deviceName),  ' = ', text]);
+    disp(['Received STRING message: ', deblank(deviceName), text]);
 end
 
 %% Callback when TRANSFORM message is received and processed

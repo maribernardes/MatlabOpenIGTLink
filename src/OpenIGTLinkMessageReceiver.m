@@ -34,7 +34,8 @@ end
 %% Message content decoding (type specific)
 
 % STATUS Message content
-% 3DSlicer is currently sending empty status messages
+% Obs: 3DSlicer is currently sending all zero bytes status messages (code = 0 - invalid packet)
+% Commented out message parsing for that reason
 function [name, message] = handleStatusMessage(msg, onRxStatusMessage)
     if (length(msg.content)<30)
         disp('Error: STATUS message received with incomplete contents')
@@ -44,7 +45,7 @@ function [name, message] = handleStatusMessage(msg, onRxStatusMessage)
     % subCode = convertUint8Vector(msg.content(3:10), 'int64');
     % errorName = char(msg.content(11:30));
     % message = char(msg.content(31:length(msg.content)));
-    message = [];
+    message = ''; % No message for now
     name = msg.deviceName;
     onRxStatusMessage(msg.deviceName, message);
 end
@@ -123,8 +124,6 @@ end
 
 % Parse OpenIGTLink message body
 function msg = ParseOpenIGTLinkMessageBody(msg)
-    disp(['Device Name: ', msg.deviceName]);
-    disp(['Body Size: ', num2str(msg.bodySize)]);
     if (msg.versionNumber==1) % Body has only content (Protocol v1 and v2)
         msg.content = msg.body;     % Copy data from body to content
         msg = rmfield(msg, 'body'); % Remove the old field 'body'
@@ -140,12 +139,8 @@ function msg = ParseOpenIGTLinkMessageBody(msg)
         msg.metadataHeaderSize = convertUint8Vector(msg.body(3:4), 'uint16');
         msg.metadataSize = convertUint8Vector(msg.body(5:8), 'uint32');
         msg.msgID = convertUint8Vector(msg.body(9:12), 'uint32');
-        disp(['Ext Header Size: ', num2str(msg.extHeaderSize)]);
-        disp(['Metadata Header Size: ', num2str(msg.metadataHeaderSize)]);
-        disp(['Metadata Size: ', num2str(msg.metadataSize)]);
         % Extract content
         contentSize = msg.bodySize - (uint64(msg.extHeaderSize) + uint64(msg.metadataHeaderSize) + uint64(msg.metadataSize));
-        disp(['Content Size: ', num2str(contentSize)]);
         msg.content = msg.body(13:12+contentSize);
         % Extract metadata
         msg.metadataNumberKeys = convertUint8Vector(msg.body(13+contentSize:14+contentSize), 'uint16');
