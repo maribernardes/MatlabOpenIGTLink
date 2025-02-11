@@ -4,6 +4,7 @@ function openIGTMessageSender = OpenIGTLinkMessageSender(sock)
     openIGTMessageSender.WriteOpenIGTLinkStringMessage = @WriteOpenIGTLinkStringMessage;
     openIGTMessageSender.WriteOpenIGTLinkTransformMessage = @WriteOpenIGTLinkTransformMessage;
     openIGTMessageSender.WriteOpenIGTLinkPointMessage = @WriteOpenIGTLinkPointMessage;
+    openIGTMessageSender.WriteOpenIGTLinkImageMessage = @WriteOpenIGTLinkImageMessage;
 end
 
 %% Prepare STRING specific message fields and call WriteOpenIGTLinkMessage
@@ -114,6 +115,116 @@ function result = WriteOpenIGTLinkPointMessage(deviceName, pointList, protocolVe
     msg.metadataSizeInt = length(metadataValues);
     msg.metadata = [metadataHeader, metadataValues];
     result = WriteOpenIGTLinkMessage(msg, protocolVersion);
+end
+
+%% Prepare IMAGE specific message fields and call WriteOpenIGTLinkMessage
+function result = WriteOpenIGTLinkImageMessage(deviceName, input, protocolVersion)
+    % Use Protocol v3 by default
+    % If image endian is not provided, default to Little-Endian (2)
+    % If image coordinate is not provided, default to LPS (2)
+    if nargin < 3
+        protocolVersion = 3;
+    end
+    if ~isfield(input, 'matrix')
+        inputDim = ndims(input);
+        if (inputDim > 1) && (inputDim < 5) % 2D, 3D or 4D (channels) matrix
+            image.matrix = input;
+        else
+            error('Unsupported image input');
+        end
+    else
+        image = input;
+        imageDim = ndims(image.matrix);
+        if (imageDim == 1) || (imageDim >= 5) % Not 2D, 3D or 4D (channels) matrix
+            error('Unsupported image input');
+        end
+    end
+    if ~isfield(image, 'origin')
+        image.origin = [0,0,0];
+    elseif ~isequal(size(image.origin), [1, 3])
+        error('Unsupported image origin format. Expects 1x3 array');
+    end
+    if ~isfield(image, 'orientation')
+        image.orientation = [1, 0, 0; 0, 1, 0; 0, 0 1];
+    elseif ~isequal(size(image.orientation), [3, 3])
+        error('Unsupported image orientation format. Expects 3x3 array');
+    end
+    if ~isfield(image, 'endian')
+        image.endian = 2;
+    elseif (image.endian ~= 1) && (image.endian ~= 2)
+        error('Invalid endianness: %d. Use 1 for BIG-ENDIAN or 2 for LITTLE-ENDIAN.', image.endian);
+    end
+    if ~isfield(image, 'coordinate')
+        image.coordinate = 2;
+    elseif (image.coordinate ~= 1) && (image.coordinate ~= 2)
+        error('Invalid coordinate: %d. Use 1 for RAS or 2 for LPS.', image.coordinate);
+    end
+    % IMAGE specific header
+    msg.dataTypeName = uint8(padString('IMAGE', 12));
+    msg.deviceName = uint8(padString(deviceName, 20));
+    % IMAGE content
+    % Define a mapping of MATLAB data types to corresponding message type codes (T values)
+    type_map = containers.Map({'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'single', 'double'}, ...
+                              [2, 3, 4, 5, 6, 7, 10, 11]);
+    % Get the class type of imageMatrix
+    classType = class(image.matrix);
+    % Validate that the type is supported
+    if ~isKey(type_map, classType)
+        error('Unsupported image data type: %s. Supported types: int8, uint8, int16, uint16, int32, uint32, single, double.', classType);
+    end
+    % Get image dimensions
+    [width, height, depth, channels] = size(image.matrix);
+    % Determine T automatically from the class of imageMatrix
+    V = convertToUint8Vector(1, 'uint16');
+    T = uint8(channels);
+    S = uint8(type_map(classType));
+    E = uint8(image.endian);
+    O = uint8(image.coordinate);
+    msg.content = [V, T, S, E, O];
+    Ri = convertToUint8Vector(width, 'uint16');
+    Rj = convertToUint8Vector(height, 'uint16');
+    Rk = convertToUint8Vector(depth, 'uint16');
+    msg.content = [msg.content, Ri, Rj, Rk];
+    Tx = convertToUint8Vector(image.orientation(1,1), 'single');
+    Ty = convertToUint8Vector(image.orientation(1,2), 'single');
+    Tz = convertToUint8Vector(image.orientation(1,3), 'single');
+    Sx = convertToUint8Vector(image.orientation(2,1), 'single');
+    Sy = convertToUint8Vector(image.orientation(2,2), 'single');
+    Sz = convertToUint8Vector(image.orientation(2,3), 'single');
+    Nx = convertToUint8Vector(image.orientation(3,1), 'single');
+    Ny = convertToUint8Vector(image.orientation(3,2), 'single');
+    Nz = convertToUint8Vector(image.orientation(3,3), 'single');
+    msg.content = [msg.content, Tx, Ty, Tz, Sx, Sy, Sz, Nx, Ny, Nz];
+    Px = convertToUint8Vector(image.origin(1), 'single');
+    Py = convertToUint8Vector(image.origin(2), 'single');
+    Pz = convertToUint8Vector(image.origin(3), 'single');
+    msg.content = [msg.content, Px, Py, Pz];
+    % Currently only sending full image (no ROI subvolume)
+    %TODO: Implement for variable Di, Dj, Dk and Dri, Drj, Drk
+    D = convertToUint8Vector(0, 'uint16');
+    msg.content = [msg.content, D, D, D, Ri, Rj, Rk]; % To be replaced by Di,Dj,Dk,Dri,Drj,Drk
+    % Ensure full interleaved order: RGBRGBRGB...
+    pixel_values = permute(image.matrix, [1, 2, 3, 4]); % Keep channels last
+    % Apply endianness (default is Little-Endian)
+    if image.endian == 1  % Big-Endian
+        image_data = reshape(swapbytes(typecast(pixel_values, 'uint8')), 1, []);
+    elseif image.endian == 2  % Little-Endian
+        image_data = reshape(typecast(pixel_values(:), 'uint8'), 1, []);
+    end
+    msg.content = [msg.content, image_data];
+    % IMAGE medatada (might be optional)
+    numberKeys = convertToUint8Vector(1, 'uint16');
+    key1 = uint8('MRMLNodeName');
+    value1 = uint8('ScalarVolume');
+    keySize1 = convertToUint8Vector(length(key1), 'uint16');
+    valueEncod1 = convertToUint8Vector(3, 'uint16');
+    valueSize1 = convertToUint8Vector(length(value1), 'uint32');
+    metadataHeader = [numberKeys, keySize1, valueEncod1, valueSize1];
+    metadataValues = [key1, value1];
+    msg.metadataHeaderSizeInt = length(metadataHeader);
+    msg.metadataSizeInt = length(metadataValues);
+    msg.metadata = [metadataHeader, metadataValues];
+    result = WriteOpenIGTLinkMessage(msg, protocolVersion);    
 end
 
 %% Assemble message and push to socket

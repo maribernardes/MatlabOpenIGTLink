@@ -1,12 +1,13 @@
 % OpenIGTLink server that executes the received string commands
-function receiver = OpenIGTLinkMessageReceiver(sock, onRxStatusMsg, onRxStringMsg, onRxTransformMsg, onRxPointMsg)
-    global onRxStatusMessage onRxStringMessage onRxTransformMessage onRxPointMessage;
+function receiver = OpenIGTLinkMessageReceiver(sock, onRxStatusMsg, onRxStringMsg, onRxTransformMsg, onRxPointMsg, onRxImageMsg)
+    global onRxStatusMessage onRxStringMessage onRxTransformMessage onRxPointMessage onRxImageMessage;
     global socket;
     global timeout;
     onRxStatusMessage = onRxStatusMsg;
     onRxStringMessage = onRxStringMsg;
     onRxTransformMessage = onRxTransformMsg;
     onRxPointMessage = onRxPointMsg;
+    onRxImageMessage = onRxImageMsg;
     socket = sock;
     timeout = 500;
     receiver.readMessage = @readMessage;
@@ -14,7 +15,7 @@ end
 
 % Process message content. Handle message content according with their types
 function [name, data] = readMessage()
-    global onRxStatusMessage onRxStringMessage onRxTransformMessage onRxPointMessage;
+    global onRxStatusMessage onRxStringMessage onRxTransformMessage onRxPointMessage onRxImageMessage;
     msg = ReadOpenIGTLinkMessage();
     messageType = char(msg.dataTypeName);
     messageType = deblank(messageType);
@@ -26,6 +27,8 @@ function [name, data] = readMessage()
         [name, data] = handleTransformMessage(msg, onRxTransformMessage);
     elseif strcmpi(messageType, 'POINT')
         [name, data] = handlePointMessage(msg, onRxPointMessage);
+    elseif strcmpi(messageType, 'IMAGE')
+        [name, data] = handleImageMessage(msg, onRxImageMessage);
     else
         disp(['Currently unsupported message type:', messageType])
     end
@@ -47,7 +50,7 @@ function [name, message] = handleStatusMessage(msg, onRxStatusMessage)
     % message = char(msg.content(31:length(msg.content)));
     message = ''; % No message for now
     name = msg.deviceName;
-    onRxStatusMessage(msg.deviceName, message);
+    onRxStatusMessage(name, message);
 end
 
 % STRING Message content
@@ -106,6 +109,54 @@ function [name, pointList] = handlePointMessage(msg, onRxPointMessage)
     end
     name = msg.deviceName;
     onRxPointMessage(name , pointList);
+end
+
+function [name, image] = handleImageMessage(msg, onRxImageMessage)
+    disp('IMAGE message incoming');
+    % Image Header
+    versionNumber = convertUint8Vector(msg.content(1:2), 'uint16');
+    numberOfComponents = uint64(msg.content(3));
+    scalarType = uint8(msg.content(4)); % (2:int8, 3:uint8, 4:int16, 5:uint16, 6:int32, 7:uint32, 10:float32, 11:float64)
+    image.endian = uint8(msg.content(5));     % (1:BIG 2:LITTLE)
+    image.coordinate = uint8(msg.content(6)); % (1:RAS 2:LPS)
+
+    Ri = uint64(convertUint8Vector(msg.content(7:8), 'uint16'));    % Number of pixels in direction i
+    Rj = uint64(convertUint8Vector(msg.content(9:10), 'uint16'));   % Number of pixels in direction j
+    Rk = uint64(convertUint8Vector(msg.content(11:12), 'uint16'));  % Number of pixels in direction k
+
+    Tx = convertUint8Vector(msg.content(13:16), 'single');  % Transverse vector (direction for i index)/
+    Ty = convertUint8Vector(msg.content(17:20), 'single');  % Vector length is pixel size in i [mm]
+    Tz = convertUint8Vector(msg.content(21:24), 'single'); 
+
+    Sx = convertUint8Vector(msg.content(25:28), 'single');  % Transverse vector (direction for j index)/
+    Sy = convertUint8Vector(msg.content(29:32), 'single');  % Vector length is pixel size in j [mm]
+    Sz = convertUint8Vector(msg.content(33:36), 'single');  
+
+    Nx = convertUint8Vector(msg.content(37:40), 'single');  % Normal vector of image plane (direction for k index)/
+    Ny = convertUint8Vector(msg.content(41:44), 'single');  % Vector length is pixel size in k (slice thickness) [mm]
+    Nz = convertUint8Vector(msg.content(45:48), 'single');  
+
+    Px = convertUint8Vector(msg.content(49:52), 'single');  % Center position of the image [mm]
+    Py = convertUint8Vector(msg.content(53:56), 'single');  
+    Pz = convertUint8Vector(msg.content(57:60), 'single');  
+
+    Di = convertUint8Vector(msg.content(61:62), 'uint16'); % Starting index of subvolume (ROI)
+    Dj = convertUint8Vector(msg.content(63:64), 'uint16'); 
+    Dk = convertUint8Vector(msg.content(65:66), 'uint16'); 
+
+    DRi = convertUint8Vector(msg.content(67:68), 'uint16'); % Number of pixels of subvolume (ROI)
+    DRj = convertUint8Vector(msg.content(69:70), 'uint16'); 
+    DRk = convertUint8Vector(msg.content(71:72), 'uint16'); 
+
+    image.origin = [Px, Py, Pz];
+    image.orientation = [Tx, Ty, Tz; Sx, Sy, Sz; Nx, Ny, Nz];
+    imageRawData = msg.content(73:length(msg.content));
+    imageData = extractImageData(imageRawData, numberOfComponents, scalarType, image.endian);
+    
+    image.matrix = reshapeImageData(imageData, Ri, Rj, Rk, numberOfComponents);
+
+    name = msg.deviceName;
+    onRxImageMessage(name, image);
 end
 
 %% General message decoding
@@ -228,4 +279,60 @@ function result = convertUint8Vector(uint8Vector, targetType)
     end
     % Use typecast to convert uint8 to the specified target type
     result = swapbytes(typecast(uint8Vector, targetType));
+end
+
+function pixel_values = extractImageData(image_data, numberOfComponents, T, E)
+    % Define a mapping of T values to MATLAB data types
+    type_map = containers.Map([2, 3, 4, 5, 6, 7, 10, 11], ...
+                              {'int8', 'uint8', 'int16', 'uint16', 'int32', 'uint32', 'single', 'double'});
+    % Validate the type code T
+    if ~isKey(type_map, T)
+        error('Invalid type code T: %d. Supported types: 2, 3, 4, 5, 6, 7, 10, 11.', T);
+    end 
+    % Get corresponding MATLAB data type
+    data_type = type_map(T);
+    disp(['Image Data Type = ', data_type]);
+    % Determine number of bytes per element
+    bytes_per_element = numel(typecast(cast(0, data_type), 'uint8'));
+    % Ensure image_data is in uint8 format
+    image_data = uint8(image_data(:)); % Ensure it's a column vector
+    % Check if image_data length is a multiple of bytes_per_element * numberOfComponents
+    total_components = bytes_per_element * numberOfComponents;
+    num_elements = floor(length(image_data) / total_components);
+    if mod(length(image_data), total_components) ~= 0
+        warning('image_data length is not a multiple of %d. Truncating extra bytes.', total_components);
+    end
+    % Extract only the valid portion of image_data
+    valid_data = image_data(1:num_elements * total_components);
+    % Reshape into an array where each row represents a full pixel (all components)
+    reshaped_data = reshape(valid_data, bytes_per_element, []);
+    % Convert bytes to the specified data type
+    if E == 1  % Big-Endian
+        pixel_values = swapbytes(typecast(reshaped_data(:), data_type));
+    elseif E == 2  % Little-Endian
+        pixel_values = typecast(reshaped_data(:), data_type);
+    else
+        error('Invalid endianness E: %d. Use 1 for BIG-ENDIAN or 2 for LITTLE-ENDIAN.', E);
+    end
+    % Reshape the output to [num_components, num_pixels] format
+    pixel_values = reshape(pixel_values, numberOfComponents, []).';
+end
+
+function reshaped_image = reshapeImageData(pixel_values, width, height, depth, numberOfComponents)
+    % Validate input size
+    [num_pixels, num_channels] = size(pixel_values);
+
+    % Ensure numberOfComponents matches the input data
+    if num_channels ~= numberOfComponents
+        error('Mismatch: The provided pixel array does not match the expected number of components.');
+    end
+
+    % Check if the total number of pixels matches the expected dimensions
+    expected_pixels = width * height * depth;
+    if num_pixels ~= expected_pixels
+        error('Mismatch: The provided pixel array does not match the specified dimensions.');
+    end
+
+    % Reshape the 2D array into a 4D matrix: [width, height, depth, numberOfComponents]
+    reshaped_image = reshape(pixel_values, [width, height, depth, numberOfComponents]);
 end
