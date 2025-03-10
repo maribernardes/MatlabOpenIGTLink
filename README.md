@@ -6,8 +6,8 @@ Note that IMAGE message has not been extensively tested. In case of problems, pl
 
 DEMO:
 
-https://github.com/user-attachments/assets/47f8f017-7f76-4b9c-9811-12b5df12c2df
 
+https://github.com/user-attachments/assets/e6c3dfb0-af7d-4170-951a-ab3da3c14939
 
 
 
